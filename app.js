@@ -11,7 +11,12 @@ let selectedLatLng;
 let map;
 let elevationRequest = 0;
 let contextRequest = 0;
-let liveContext = { elevation: null, weather: null, landCover: null };
+let liveContext = { elevation: null, weather: null, landCover: null, access: null };
+let trackWatchId = null;
+let trackLine = null;
+let trackPoints = [];
+let waypoints = [];
+let accessRequest = 0;
 
 const grid = document.getElementById('speciesGrid');
 const mapStatus = document.getElementById('mapStatus');
@@ -69,7 +74,9 @@ function revealResult(latlng) {
   emptyState.classList.add('is-hidden');
   results.classList.remove('is-hidden');
   mapStatus.textContent = `Pin placed · ${latlng.lat.toFixed(4)}°, ${latlng.lng.toFixed(4)}°`;
-  liveContext = { elevation: null, weather: null, landCover: null };
+  liveContext = { elevation: null, weather: null, landCover: null, access: null };
+  document.getElementById('accessReadout').textContent = 'Checking federal data…';
+  document.getElementById('accessDetail').textContent = 'Always verify the managing agency’s rules';
   document.getElementById('weatherReadout').textContent = 'Loading…';
   document.getElementById('rainReadout').textContent = 'Fetching rainfall';
   document.getElementById('landCoverReadout').textContent = 'Loading…';
@@ -78,6 +85,7 @@ function revealResult(latlng) {
   lookupElevation(latlng);
   lookupWeather(latlng);
   lookupLandCover(latlng);
+  lookupAccess(latlng);
 }
 
 async function lookupElevation(latlng) {
@@ -162,6 +170,39 @@ async function lookupLandCover(latlng) {
   }
 }
 
+async function lookupAccess(latlng) {
+  const thisRequest = ++accessRequest;
+  try {
+    const geometry = JSON.stringify({ x: latlng.lng, y: latlng.lat, spatialReference: { wkid: 4326 } });
+    const params = new URLSearchParams({
+      where: '1=1', geometry, geometryType: 'esriGeometryPoint', inSR: '4326', spatialRel: 'esriSpatialRelIntersects',
+      outFields: 'ADMIN_AGENCY_CODE,ADMIN_UNIT_NAME,ADMIN_UNIT_TYPE,ADMIN_ST', returnGeometry: 'false', f: 'json'
+    });
+    const url = 'https://gis.blm.gov/arcgis/rest/services/lands/BLM_Natl_SMA_Cached_without_PriUnk/MapServer/1/query?' + params;
+    const response = await fetch(url);
+    if (!response.ok) throw new Error('Access lookup failed');
+    const data = await response.json();
+    if (thisRequest !== accessRequest) return;
+    const attributes = data.features?.[0]?.attributes;
+    const manager = attributes?.ADMIN_AGENCY_CODE;
+    const unit = attributes?.ADMIN_UNIT_NAME || attributes?.ADMIN_UNIT_TYPE;
+    if (!manager || manager === 'PVT') {
+      liveContext.access = { signal: 'Federal surface-manager data reports private or unknown ownership.' };
+      document.getElementById('accessReadout').textContent = manager === 'PVT' ? 'Private / non-federal' : 'No federal match';
+      document.getElementById('accessDetail').textContent = 'Do not assume access; verify ownership and permission.';
+    } else {
+      liveContext.access = { signal: `Federal surface-manager data reports ${manager}${unit ? ` (${unit})` : ''}.` };
+      document.getElementById('accessReadout').textContent = `${manager}${unit ? ` · ${unit}` : ''}`;
+      document.getElementById('accessDetail').textContent = 'Manager identified; foraging rules, closures, permits, and boundaries still require verification.';
+    }
+    updateResult();
+  } catch (error) {
+    if (thisRequest !== accessRequest) return;
+    document.getElementById('accessReadout').textContent = 'Coverage unavailable';
+    document.getElementById('accessDetail').textContent = 'Federal data is incomplete; do not infer access.';
+  }
+}
+
 function updateOutputs() {
   document.getElementById('rainOutput').value = `${rain.value} mm`;
   document.getElementById('elevationOutput').value = `${Number(elevation.value).toLocaleString()} m`;
@@ -189,8 +230,63 @@ document.getElementById('locateButton').addEventListener('click', () => {
   );
 });
 
+function saveLocalFieldData() {
+  localStorage.setItem('sporeScoutFieldData', JSON.stringify({ waypoints, trackPoints }));
+}
+
+function refreshOfflineStatus() {
+  const online = navigator.onLine ? 'Online' : 'Offline';
+  const trackState = trackWatchId === null ? 'track saved on this device' : `${trackPoints.length} points recording`;
+  document.getElementById('offlineStatus').textContent = `${online} · ${trackState}`;
+}
+
+window.addEventListener('online', refreshOfflineStatus);
+window.addEventListener('offline', refreshOfflineStatus);
+
+document.getElementById('trackButton').addEventListener('click', () => {
+  const button = document.getElementById('trackButton');
+  if (trackWatchId !== null) {
+    navigator.geolocation.clearWatch(trackWatchId);
+    trackWatchId = null;
+    button.textContent = 'Start track';
+    button.classList.remove('is-recording');
+    saveLocalFieldData();
+    refreshOfflineStatus();
+    return;
+  }
+  if (!navigator.geolocation) return showToast('This browser does not support location tracking.');
+  trackPoints = [];
+  if (trackLine) map.removeLayer(trackLine);
+  trackWatchId = navigator.geolocation.watchPosition(position => {
+    const point = [position.coords.latitude, position.coords.longitude];
+    trackPoints.push(point);
+    if (trackLine) trackLine.setLatLngs(trackPoints); else trackLine = L.polyline(trackPoints, { color: '#b85c3f', weight: 4, opacity: .9 }).addTo(map);
+    map.panTo(point, { animate: true });
+    saveLocalFieldData();
+    refreshOfflineStatus();
+  }, () => {
+    showToast('Location tracking needs permission.');
+    navigator.geolocation.clearWatch(trackWatchId); trackWatchId = null;
+    button.textContent = 'Start track'; button.classList.remove('is-recording'); refreshOfflineStatus();
+  }, { enableHighAccuracy: true, maximumAge: 5000 });
+  button.textContent = 'Stop track';
+  button.classList.add('is-recording');
+  refreshOfflineStatus();
+});
+
+document.getElementById('waypointButton').addEventListener('click', () => {
+  if (!selectedLatLng) return showToast('Drop a pin before saving a waypoint.');
+  const point = { lat: selectedLatLng.lat, lng: selectedLatLng.lng, createdAt: new Date().toISOString() };
+  waypoints.push(point);
+  L.circleMarker([point.lat, point.lng], { radius: 6, color: '#214e3e', weight: 2, fillColor: '#fff', fillOpacity: 1 }).addTo(map).bindTooltip('Saved waypoint');
+  saveLocalFieldData();
+  showToast(`Waypoint ${waypoints.length} saved on this device.`);
+});
+
 document.getElementById('resetButton').addEventListener('click', () => {
-  selectedKey = 'russula'; rain.value = 34; elevation.value = 1460; season.value = 'summer'; selectedLatLng = null; liveContext = { elevation: null, weather: null, landCover: null };
+  selectedKey = 'russula'; rain.value = 34; elevation.value = 1460; season.value = 'summer'; selectedLatLng = null; liveContext = { elevation: null, weather: null, landCover: null, access: null };
+  document.getElementById('accessReadout').textContent = 'Waiting for pin';
+  document.getElementById('accessDetail').textContent = 'Not a permission decision';
   document.getElementById('weatherReadout').textContent = 'Waiting for pin';
   document.getElementById('rainReadout').textContent = '—';
   document.getElementById('landCoverReadout').textContent = 'Waiting for pin';
@@ -204,6 +300,20 @@ document.getElementById('menuButton').addEventListener('click', () => showToast(
 function showToast(message) { toast.textContent = message; toast.classList.remove('is-hidden'); setTimeout(() => toast.classList.add('is-hidden'), 2500); }
 
 [rain, elevation, season].forEach(control => control.addEventListener('input', updateOutputs));
+function restoreLocalFieldData() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('sporeScoutFieldData') || '{}');
+    waypoints = Array.isArray(saved.waypoints) ? saved.waypoints : [];
+    trackPoints = Array.isArray(saved.trackPoints) ? saved.trackPoints : [];
+    waypoints.forEach(point => L.circleMarker([point.lat, point.lng], { radius: 6, color: '#214e3e', weight: 2, fillColor: '#fff', fillOpacity: 1 }).addTo(map).bindTooltip('Saved waypoint'));
+    if (trackPoints.length > 1) trackLine = L.polyline(trackPoints, { color: '#b85c3f', weight: 4, opacity: .9 }).addTo(map);
+  } catch (error) { localStorage.removeItem('sporeScoutFieldData'); }
+  refreshOfflineStatus();
+}
+
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
+
 renderSpecies();
 updateOutputs();
 initializeMap();
+restoreLocalFieldData();

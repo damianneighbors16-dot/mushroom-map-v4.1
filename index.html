@@ -68,6 +68,11 @@
             <div><span class="status-dot"></span><span id="mapStatus">Loading live map…</span></div>
             <button class="location-button" id="locateButton"><span aria-hidden="true">⌖</span> Use my location</button>
           </div>
+          <div class="field-controls">
+            <button class="track-button" id="trackButton">Start track</button>
+            <button class="waypoint-button" id="waypointButton">Save waypoint</button>
+            <span id="offlineStatus">Online · track saved on this device</span>
+          </div>
           <div class="map" id="map" role="application" aria-label="Interactive terrain map. Click to place a location pin." tabindex="0">
             <div id="mapCanvas" aria-hidden="true"></div>
             <div class="map-hint" id="mapHint">Click anywhere to score that place</div>
@@ -86,6 +91,7 @@
               <div class="live-data-card"><span>Live weather</span><strong id="weatherReadout">Waiting for pin</strong><small id="rainReadout">—</small></div>
               <div class="live-data-card"><span>Land cover</span><strong id="landCoverReadout">Waiting for pin</strong><small id="landCoverDetail">—</small></div>
             </div>
+            <div class="access-card" id="accessCard"><span>Access check</span><strong id="accessReadout">Waiting for pin</strong><small id="accessDetail">Not a permission decision</small></div>
             <div class="signal-list"><p class="signal-title">What’s influencing this</p><ul id="signalList"></ul></div>
             <button class="outline-button" id="detailsButton">View score details <span>→</span></button>
           </div>
