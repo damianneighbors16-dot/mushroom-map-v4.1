@@ -7,6 +7,8 @@ A responsive UI prototype for exploring **habitat suitability** for different mu
 - Live OpenStreetMap basemap: click anywhere to drop/move a location pin
 - Optional browser geolocation (only after the user presses “Use my location”)
 - Live elevation lookup for the pin from Open-Meteo’s Elevation API
+- Live temperature and trailing 24-hour precipitation from Open-Meteo’s Forecast API
+- Point-level global land-cover classification from Esri’s Sentinel-2 10m Land Cover service
 - Species filters for Russula, Hawk's Wing, Chanterelle, and Morel
 - Season, elevation, and recent-rain controls
 - A score card that updates based on the selected species, pin location, and controls
@@ -15,7 +17,7 @@ A responsive UI prototype for exploring **habitat suitability** for different mu
 
 ## Important prototype limits
 
-The map coordinates and elevation lookup are live, but the suitability score, rainfall control, canopy/substrate signals, and species rules remain deliberately simulated UI logic. This is **not evidence that a species is present**, not an identification tool, and not advice that anything is edible. A production version should use validated occurrence, weather, land-cover, elevation, substrate, and permissions data, and should retain prominent safety guidance.
+Map coordinates, elevation, live weather/precipitation, and satellite land-cover class are real data layers. The suitability score, canopy/substrate signals, tree-species associations, and species rules remain deliberately simulated UI logic. This is **not evidence that a species is present**, not an identification tool, and not advice that anything is edible. A production version should use validated occurrence, weather, land-cover, elevation, substrate, and permissions data, and should retain prominent safety guidance.
 
 ## Run it locally
 

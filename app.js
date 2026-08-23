@@ -10,6 +10,8 @@ let marker;
 let selectedLatLng;
 let map;
 let elevationRequest = 0;
+let contextRequest = 0;
+let liveContext = { elevation: null, weather: null, landCover: null };
 
 const grid = document.getElementById('speciesGrid');
 const mapStatus = document.getElementById('mapStatus');
@@ -52,9 +54,12 @@ function updateResult() {
   document.getElementById('scoreValue').textContent = score;
   document.getElementById('scoreRing').style.borderRightColor = score >= 75 ? '#214e3e' : score >= 52 ? '#d28a36' : '#b85c3f';
   document.getElementById('resultSummary').textContent = score >= 75 ? `This place has several conditions that could support ${item.name} habitat. Treat it as a lead to investigate, not a sighting.` : score >= 52 ? `There are a few useful signals at this location, but the conditions are mixed for ${item.name}.` : `The current location and conditions do not strongly match typical ${item.name} habitat.`;
-  const signals = [...item.signals];
-  signals.push(`Live elevation: ${Number(elevation.value).toLocaleString()} m`);
-  document.getElementById('signalList').innerHTML = signals.slice(0, 3).map((signal, index) => `<li class="${index === 2 && score < 52 ? 'negative' : ''}">${signal}</li>`).join('');
+  const signals = [
+    liveContext.landCover?.signal || item.signals[0],
+    liveContext.weather?.signal || item.signals[1],
+    seasonText
+  ];
+  document.getElementById('signalList').innerHTML = signals.map((signal, index) => `<li class="${index === 2 && score < 52 ? 'negative' : ''}">${signal}</li>`).join('');
 }
 
 function revealResult(latlng) {
@@ -64,8 +69,15 @@ function revealResult(latlng) {
   emptyState.classList.add('is-hidden');
   results.classList.remove('is-hidden');
   mapStatus.textContent = `Pin placed · ${latlng.lat.toFixed(4)}°, ${latlng.lng.toFixed(4)}°`;
+  liveContext = { elevation: null, weather: null, landCover: null };
+  document.getElementById('weatherReadout').textContent = 'Loading…';
+  document.getElementById('rainReadout').textContent = 'Fetching rainfall';
+  document.getElementById('landCoverReadout').textContent = 'Loading…';
+  document.getElementById('landCoverDetail').textContent = 'Classifying surface';
   updateResult();
   lookupElevation(latlng);
+  lookupWeather(latlng);
+  lookupLandCover(latlng);
 }
 
 async function lookupElevation(latlng) {
@@ -87,6 +99,66 @@ async function lookupElevation(latlng) {
     if (thisRequest !== elevationRequest) return;
     document.getElementById('elevationReadout').textContent = 'Unavailable';
     showToast('Live elevation could not be retrieved.');
+  }
+}
+
+async function lookupWeather(latlng) {
+  const thisRequest = ++contextRequest;
+  try {
+    const params = new URLSearchParams({
+      latitude: latlng.lat.toFixed(5), longitude: latlng.lng.toFixed(5),
+      current: 'temperature_2m,precipitation', hourly: 'precipitation',
+      past_days: '1', forecast_days: '1', timezone: 'auto'
+    });
+    const response = await fetch(`https://api.open-meteo.com/v1/forecast?${params}`);
+    if (!response.ok) throw new Error('Weather lookup failed');
+    const data = await response.json();
+    if (thisRequest !== contextRequest) return;
+    const hours = data.hourly?.time || [];
+    const precipitation = data.hourly?.precipitation || [];
+    const now = new Date();
+    const lastDayRain = hours.reduce((sum, time, index) => {
+      const timestamp = new Date(time);
+      return timestamp <= now && timestamp >= new Date(now - 24 * 60 * 60 * 1000) ? sum + Number(precipitation[index] || 0) : sum;
+    }, 0);
+    const temp = Math.round(Number(data.current?.temperature_2m));
+    const currentRain = Number(data.current?.precipitation || 0);
+    const rainMm = Math.round(lastDayRain * 10) / 10;
+    liveContext.weather = { signal: `${rainMm} mm precipitation in the past 24h; live weather data loaded.` };
+    rain.value = Math.min(Number(rain.max), Math.round(rainMm));
+    document.getElementById('rainOutput').value = `${rainMm} mm`;
+    document.getElementById('weatherReadout').textContent = `${temp}°C now`;
+    document.getElementById('rainReadout').textContent = `${rainMm} mm / 24h · ${currentRain} mm now`;
+    updateResult();
+  } catch (error) {
+    if (thisRequest !== contextRequest) return;
+    document.getElementById('weatherReadout').textContent = 'Unavailable';
+    document.getElementById('rainReadout').textContent = 'Weather lookup failed';
+  }
+}
+
+async function lookupLandCover(latlng) {
+  const thisRequest = contextRequest;
+  const labels = { 1: 'Water', 2: 'Trees', 4: 'Flooded vegetation', 5: 'Crops', 7: 'Built area', 8: 'Bare ground', 9: 'Snow or ice', 10: 'Clouds', 11: 'Rangeland' };
+  try {
+    const geometry = JSON.stringify({ x: latlng.lng, y: latlng.lat, spatialReference: { wkid: 4326 } });
+    const params = new URLSearchParams({ geometry, geometryType: 'esriGeometryPoint', returnFirstValueOnly: 'true', returnGeometry: 'false', outFields: '*', f: 'json' });
+    const response = await fetch(`https://ic.imagery1.arcgis.com/arcgis/rest/services/Sentinel2_10m_LandCover/ImageServer/getSamples?${params}`);
+    if (!response.ok) throw new Error('Land-cover lookup failed');
+    const data = await response.json();
+    if (thisRequest !== contextRequest) return;
+    const sample = data.samples?.[0];
+    const category = Number(sample?.value);
+    const label = labels[category] || 'Unclassified';
+    const year = sample?.attributes?.Year;
+    liveContext.landCover = { signal: category === 2 ? `Satellite land-cover class: Trees (${year}).` : `Satellite land-cover class: ${label} (${year}).` };
+    document.getElementById('landCoverReadout').textContent = label;
+    document.getElementById('landCoverDetail').textContent = year ? `Satellite class · ${year}` : 'Satellite class';
+    updateResult();
+  } catch (error) {
+    if (thisRequest !== contextRequest) return;
+    document.getElementById('landCoverReadout').textContent = 'Unavailable';
+    document.getElementById('landCoverDetail').textContent = 'Land-cover lookup failed';
   }
 }
 
@@ -118,7 +190,11 @@ document.getElementById('locateButton').addEventListener('click', () => {
 });
 
 document.getElementById('resetButton').addEventListener('click', () => {
-  selectedKey = 'russula'; rain.value = 34; elevation.value = 1460; season.value = 'summer'; selectedLatLng = null;
+  selectedKey = 'russula'; rain.value = 34; elevation.value = 1460; season.value = 'summer'; selectedLatLng = null; liveContext = { elevation: null, weather: null, landCover: null };
+  document.getElementById('weatherReadout').textContent = 'Waiting for pin';
+  document.getElementById('rainReadout').textContent = '—';
+  document.getElementById('landCoverReadout').textContent = 'Waiting for pin';
+  document.getElementById('landCoverDetail').textContent = '—';
   if (marker) { map.removeLayer(marker); marker = null; }
   mapHint.classList.remove('is-hidden'); emptyState.classList.remove('is-hidden'); results.classList.add('is-hidden');
   document.getElementById('terrainReadout').classList.add('is-hidden'); mapStatus.textContent = 'Click the map to place a pin'; renderSpecies(); updateOutputs();
