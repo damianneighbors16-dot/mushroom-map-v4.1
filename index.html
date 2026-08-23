@@ -98,6 +98,28 @@
         </aside>
       </section>
 
+      <section class="estimator" id="estimator" aria-label="Chanterelle habitat estimator">
+        <div class="estimator-intro"><p class="eyebrow">Experimental Chanterelle rubric</p><h2>Estimate habitat <em>compatibility</em>.</h2><p>This weights the ranges you supplied. It is a transparent habitat score—not a verified probability, a sighting, identification, or harvesting decision.</p><div class="score-block"><span>Current compatibility</span><strong id="estimatorScore">—</strong><small>/100</small><p id="estimatorLabel">Drop a pin to load live conditions.</p></div></div>
+        <div class="estimator-inputs">
+          <div class="input-heading"><p class="section-label">Live conditions + field inputs</p><span id="estimatorPin">No location selected</span></div>
+          <div class="factor-grid">
+            <label class="factor"><span>Air temperature <b>live</b></span><input id="airTempInput" type="number" step="0.1" placeholder="°C"><small>Target 15–20°C · weight 5</small></label>
+            <label class="factor"><span>Soil-surface temperature <b>live</b></span><input id="soilTempInput" type="number" step="0.1" placeholder="°C"><small>Target 17–20°C · weight 5</small></label>
+            <label class="factor"><span>Relative humidity <b>live</b></span><input id="humidityInput" type="number" step="1" placeholder="%"><small>Target 76–80% · weight 4</small></label>
+            <label class="factor"><span>30-day precipitation <b>live</b></span><input id="precipInput" type="number" step="1" placeholder="mm"><small>Target 60–100 mm · weight 5</small></label>
+            <label class="factor"><span>Soil moisture <b>live</b></span><select id="moistureInput"><option value="unknown">Unknown</option><option value="dry">Dry</option><option value="moist">Consistently moist</option><option value="saturated">Saturated</option></select><small>Moist, not saturated · weight 5</small></label>
+            <label class="factor"><span>Soil pH <b>field input</b></span><input id="phInput" type="number" step="0.1" placeholder="pH"><small>Target 4.0–5.5 · weight 5</small></label>
+            <label class="factor"><span>Drainage <b>field input</b></span><select id="drainageInput"><option value="unknown">Unknown</option><option value="poor">Poor</option><option value="well">Well drained</option></select><small>Well drained · weight 4</small></label>
+            <label class="factor"><span>Canopy <b>field input</b></span><select id="canopyInput"><option value="unknown">Unknown</option><option value="closed">Dense canopy</option><option value="moderate">Moderately open forest</option><option value="open">Very open canopy</option></select><small>Moderately open ? weight 4</small></label>
+            <label class="factor"><span>Light <b>field input</b></span><select id="lightInput"><option value="unknown">Unknown</option><option value="shade">Shaded</option><option value="filtered">Filtered forest light</option><option value="open">Open sun</option></select><small>Shaded / filtered ? weight 3</small></label>
+            <label class="factor"><span>Soil nitrogen <b>field input</b></span><select id="nitrogenInput"><option value="unknown">Unknown</option><option value="low">Relatively low</option><option value="medium">Medium / unknown</option><option value="high">High</option></select><small>Relatively low ? weight 3</small></label>
+            <label class="factor"><span>Host tree present <b>field input</b></span><select id="hostInput"><option value="unknown">Unknown</option><option value="no">No / not observed</option><option value="yes">Yes / likely host present</option></select><small>Ectomycorrhizal host needed · weight 3</small></label>
+            <label class="factor"><span>Accumulated GDD <b>field input</b></span><input id="gddInput" type="number" step="1" placeholder="°C-days"><small>Target 500±70 or 800–900 · weight 5</small></label>
+          </div>
+          <div class="factor-summary"><div><strong id="knownWeight">0%</strong><span>weighted evidence available</span></div><ul id="factorBreakdown"></ul></div>
+        </div>
+      </section>
+
       <section class="how-it-works" id="how-it-works">
         <div><p class="eyebrow">Designed for curiosity</p><h2>Start with conditions,<br />then verify in the field.</h2></div>
         <ol><li><span>01</span><p>Choose a species with distinct habitat needs.</p></li><li><span>02</span><p>Explore a pin’s terrain, season, and moisture signals.</p></li><li><span>03</span><p>Use the score as a research prompt—not an identification or harvesting decision.</p></li></ol>

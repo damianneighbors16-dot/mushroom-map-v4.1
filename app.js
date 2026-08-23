@@ -69,6 +69,7 @@ function updateResult() {
 
 function revealResult(latlng) {
   selectedLatLng = latlng;
+  document.getElementById('estimatorPin').textContent = `Pin: ${latlng.lat.toFixed(4)}°, ${latlng.lng.toFixed(4)}°`;
   if (marker) marker.setLatLng(latlng); else marker = L.circleMarker(latlng, { radius: 10, color: '#fff', weight: 3, fillColor: '#b85c3f', fillOpacity: 1 }).addTo(map);
   mapHint.classList.add('is-hidden');
   emptyState.classList.add('is-hidden');
@@ -115,8 +116,8 @@ async function lookupWeather(latlng) {
   try {
     const params = new URLSearchParams({
       latitude: latlng.lat.toFixed(5), longitude: latlng.lng.toFixed(5),
-      current: 'temperature_2m,precipitation', hourly: 'precipitation',
-      past_days: '1', forecast_days: '1', timezone: 'auto'
+      current: 'temperature_2m,relative_humidity_2m,precipitation', hourly: 'precipitation,soil_temperature_0cm,soil_moisture_0_to_1cm',
+      past_days: '31', forecast_days: '1', timezone: 'auto'
     });
     const response = await fetch(`https://api.open-meteo.com/v1/forecast?${params}`);
     if (!response.ok) throw new Error('Weather lookup failed');
@@ -129,14 +130,30 @@ async function lookupWeather(latlng) {
       const timestamp = new Date(time);
       return timestamp <= now && timestamp >= new Date(now - 24 * 60 * 60 * 1000) ? sum + Number(precipitation[index] || 0) : sum;
     }, 0);
+    const thirtyDayRain = hours.reduce((sum, time, index) => {
+      const timestamp = new Date(time);
+      return timestamp <= now && timestamp >= new Date(now - 30 * 24 * 60 * 60 * 1000) ? sum + Number(precipitation[index] || 0) : sum;
+    }, 0);
     const temp = Math.round(Number(data.current?.temperature_2m));
+    const humidity = Math.round(Number(data.current?.relative_humidity_2m));
     const currentRain = Number(data.current?.precipitation || 0);
     const rainMm = Math.round(lastDayRain * 10) / 10;
+    const thirtyMm = Math.round(thirtyDayRain);
+    const pastTimes = hours.map(time => new Date(time).getTime());
+    const latestIndex = pastTimes.reduce((best, time, index) => time <= now.getTime() && time > (pastTimes[best] || -Infinity) ? index : best, 0);
+    const soilTemp = Number(data.hourly?.soil_temperature_0cm?.[latestIndex]);
+    const soilMoisture = Number(data.hourly?.soil_moisture_0_to_1cm?.[latestIndex]);
     liveContext.weather = { signal: `${rainMm} mm precipitation in the past 24h; live weather data loaded.` };
     rain.value = Math.min(Number(rain.max), Math.round(rainMm));
     document.getElementById('rainOutput').value = `${rainMm} mm`;
     document.getElementById('weatherReadout').textContent = `${temp}°C now`;
     document.getElementById('rainReadout').textContent = `${rainMm} mm / 24h · ${currentRain} mm now`;
+    document.getElementById('airTempInput').value = Number.isFinite(temp) ? temp : '';
+    document.getElementById('humidityInput').value = Number.isFinite(humidity) ? humidity : '';
+    document.getElementById('precipInput').value = Number.isFinite(thirtyMm) ? thirtyMm : '';
+    document.getElementById('soilTempInput').value = Number.isFinite(soilTemp) ? soilTemp.toFixed(1) : '';
+    document.getElementById('moistureInput').value = !Number.isFinite(soilMoisture) ? 'unknown' : soilMoisture < .12 ? 'dry' : soilMoisture > .38 ? 'saturated' : 'moist';
+    updateEstimator();
     updateResult();
   } catch (error) {
     if (thisRequest !== contextRequest) return;
@@ -207,6 +224,35 @@ function updateOutputs() {
   document.getElementById('rainOutput').value = `${rain.value} mm`;
   document.getElementById('elevationOutput').value = `${Number(elevation.value).toLocaleString()} m`;
   if (selectedLatLng) updateResult();
+}
+
+function numberValue(id) { const value = Number(document.getElementById(id).value); return Number.isFinite(value) && document.getElementById(id).value !== '' ? value : null; }
+function rangeFit(value, min, max, tolerance) { if (value === null) return null; if (value >= min && value <= max) return 1; const distance = value < min ? min - value : value - max; return Math.max(0, 1 - distance / tolerance); }
+function categoricalFit(value, desired) { if (value === 'unknown') return null; return value === desired ? 1 : 0; }
+function updateEstimator() {
+  const factors = [
+    ['Air temp', 5, rangeFit(numberValue('airTempInput'), 15, 20, 10)],
+    ['Soil-surface temp', 5, rangeFit(numberValue('soilTempInput'), 17, 20, 10)],
+    ['Humidity', 4, rangeFit(numberValue('humidityInput'), 76, 80, 30)],
+    ['30-day precipitation', 5, rangeFit(numberValue('precipInput'), 60, 100, 120)],
+    ['Soil moisture', 5, categoricalFit(document.getElementById('moistureInput').value, 'moist')],
+    ['Soil pH', 5, rangeFit(numberValue('phInput'), 4, 5.5, 3)],
+    ['Drainage', 4, categoricalFit(document.getElementById('drainageInput').value, 'well')],
+    ['Canopy', 4, categoricalFit(document.getElementById('canopyInput').value, 'moderate')],
+    ['Light', 3, (() => { const light = document.getElementById('lightInput').value; return light === 'unknown' ? null : (light === 'shade' || light === 'filtered' ? 1 : 0); })()],
+    ['Soil nitrogen', 3, categoricalFit(document.getElementById('nitrogenInput').value, 'low')],
+    ['Host tree', 3, categoricalFit(document.getElementById('hostInput').value, 'yes')],
+    ['Accumulated GDD', 5, (() => { const gdd = numberValue('gddInput'); if (gdd === null) return null; return Math.max(rangeFit(gdd, 430, 570, 210), rangeFit(gdd, 800, 900, 250)); })()]
+  ];
+  const totalWeight = factors.reduce((sum, [, weight]) => sum + weight, 0);
+  const known = factors.filter(([, , fit]) => fit !== null);
+  const knownWeight = known.reduce((sum, [, weight]) => sum + weight, 0);
+  const score = knownWeight ? Math.round(known.reduce((sum, [, weight, fit]) => sum + weight * fit, 0) / knownWeight * 100) : null;
+  const label = score === null ? 'Add conditions to estimate compatibility.' : knownWeight / totalWeight < .55 ? 'Early estimate — more field inputs needed.' : score >= 75 ? 'Strong condition match — still verify in the field.' : score >= 50 ? 'Mixed condition match.' : 'Weak match to the supplied conditions.';
+  document.getElementById('estimatorScore').textContent = score === null ? '—' : score;
+  document.getElementById('estimatorLabel').textContent = label;
+  document.getElementById('knownWeight').textContent = `${Math.round(knownWeight / totalWeight * 100)}%`;
+  document.getElementById('factorBreakdown').innerHTML = factors.map(([name, weight, fit]) => `<li>${name}: ${fit === null ? 'unknown' : `${Math.round(fit * 100)}%`} <em>×${weight}</em></li>`).join('');
 }
 
 function initializeMap() {
@@ -287,6 +333,10 @@ document.getElementById('resetButton').addEventListener('click', () => {
   selectedKey = 'russula'; rain.value = 34; elevation.value = 1460; season.value = 'summer'; selectedLatLng = null; liveContext = { elevation: null, weather: null, landCover: null, access: null };
   document.getElementById('accessReadout').textContent = 'Waiting for pin';
   document.getElementById('accessDetail').textContent = 'Not a permission decision';
+  document.getElementById('estimatorPin').textContent = 'No location selected';
+  ['airTempInput','soilTempInput','humidityInput','precipInput','phInput','gddInput'].forEach(id => document.getElementById(id).value = '');
+  ['moistureInput','drainageInput','canopyInput','lightInput','nitrogenInput','hostInput'].forEach(id => document.getElementById(id).value = 'unknown');
+  updateEstimator();
   document.getElementById('weatherReadout').textContent = 'Waiting for pin';
   document.getElementById('rainReadout').textContent = '—';
   document.getElementById('landCoverReadout').textContent = 'Waiting for pin';
@@ -300,6 +350,7 @@ document.getElementById('menuButton').addEventListener('click', () => showToast(
 function showToast(message) { toast.textContent = message; toast.classList.remove('is-hidden'); setTimeout(() => toast.classList.add('is-hidden'), 2500); }
 
 [rain, elevation, season].forEach(control => control.addEventListener('input', updateOutputs));
+['airTempInput','soilTempInput','humidityInput','precipInput','phInput','gddInput','moistureInput','drainageInput','canopyInput','lightInput','nitrogenInput','hostInput'].forEach(id => document.getElementById(id).addEventListener('input', updateEstimator));
 function restoreLocalFieldData() {
   try {
     const saved = JSON.parse(localStorage.getItem('sporeScoutFieldData') || '{}');
@@ -315,5 +366,6 @@ if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').ca
 
 renderSpecies();
 updateOutputs();
+updateEstimator();
 initializeMap();
 restoreLocalFieldData();

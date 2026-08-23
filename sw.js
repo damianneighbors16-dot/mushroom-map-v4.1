@@ -1,4 +1,4 @@
-const CACHE = 'spore-scout-shell-v1';
+const CACHE = 'spore-scout-shell-v2';
 const APP_SHELL = ['./', './index.html', './styles.css', './app.js'];
 
 self.addEventListener('install', event => {

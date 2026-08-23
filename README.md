@@ -14,8 +14,14 @@ A responsive UI prototype for exploring **habitat suitability** for different mu
 - Species filters for Russula, Hawk's Wing, Chanterelle, and Morel
 - Season, elevation, and recent-rain controls
 - A score card that updates based on the selected species, pin location, and controls
+- Experimental Chanterelle habitat estimator that combines live temperature, humidity, 30-day precipitation, and soil-surface moisture with field inputs
 - Nearby habitat signals and a transparent score explanation
 - Mobile-friendly layout
+
+## Experimental Chanterelle habitat estimator
+The app now includes a transparent Chanterelle compatibility estimator using Damian?s supplied targets and weights. A dropped pin fills available temperature, humidity, precipitation, and soil-surface moisture inputs from live sources; pH, drainage, canopy, light, soil nitrogen, host-tree, and growing-degree-day inputs remain field observations. The live 30-day precipitation is used as a practical proxy for the supplied cumulative/monthly rainfall targets and is scored once to avoid double-counting.
+
+The score expresses only compatibility with this experimental rubric. It is not a calibrated probability, a finding record, a species identification, a harvest recommendation, or an access decision. Growing degree days are manually entered using the supplied base of 5?C / 41?F until a validated historical climate calculation is added.
 
 ## Important prototype limits
 
